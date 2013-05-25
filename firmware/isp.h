@@ -16,6 +16,7 @@
 #define	uchar	unsigned char
 #endif
 
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 #define	ISP_OUT   PORTB
 #define ISP_IN    PINB
 #define ISP_DDR   DDRB
@@ -23,6 +24,15 @@
 #define ISP_MOSI  PB3
 #define ISP_MISO  PB4
 #define ISP_SCK   PB5
+#else
+#define ISP_OUT   PORTB
+#define ISP_IN    PINB
+#define ISP_DDR   DDRB
+#define ISP_RST   PB5
+#define ISP_MOSI  PB1
+#define ISP_MISO  PB0
+#define ISP_SCK   PB2
+#endif
 
 /* Prepare connection to target device */
 void ispConnect();

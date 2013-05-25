@@ -8,7 +8,7 @@
  * Creation Date..: 2005-02-20
  * Last change....: 2009-02-28
  *
- * PC2 SCK speed option.
+ * PC2 SCK speed option on ATmega8
  * GND  -> slow (8khz SCK),
  * open -> software set speed (default is 375kHz SCK)
  */
@@ -17,6 +17,7 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
+#include <avr/eeprom.h>
 
 #include "usbasp.h"
 #include "usbdrv.h"
@@ -44,9 +45,12 @@ uchar usbFunctionSetup(uchar data[8]) {
 	if (data[1] == USBASP_FUNC_CONNECT) {
 
 		/* set SCK speed */
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 		if ((PINC & (1 << PC2)) == 0) {
 			ispSetSCKOption(USBASP_ISP_SCK_8);
-		} else {
+		} else
+#endif
+		{
 			ispSetSCKOption(prog_sck);
 		}
 
@@ -192,7 +196,7 @@ uchar usbFunctionSetup(uchar data[8]) {
 		len = 4;
 	}
 
-	usbMsgPtr = replyBuffer;
+	usbMsgPtr = (usbMsgPtr_t) replyBuffer;
 
 	return len;
 }
@@ -300,14 +304,40 @@ uchar usbFunctionWrite(uchar *data, uchar len) {
 	return retVal;
 }
 
+#if defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
+void usbFunctionReset(void)
+{
+	/* Disable interrupts during oscillator calibration since
+	 * usbMeasureFrameLength() counts CPU cycles.
+	 */
+	cli();
+	calibrateOscillator();
+	sei();
+	eeprom_write_byte(0, OSCCAL);   /* store the calibrated value in EEPROM */
+}
+#endif
+
 int main(void) {
 	uchar i, j;
 
+#if defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
+	uchar calibrationValue;
+	/* Read previously stored calibration value from EEPROM to speed up
+	 * things. */
+	calibrationValue = eeprom_read_byte(0);
+	if (calibrationValue != 0xff)
+		OSCCAL = calibrationValue;
+#endif
+
+	wdt_enable(WDTO_1S);
+
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 	/* no pullups on USB and ISP pins */
 	PORTD = 0;
 	PORTB = 0;
 	/* all outputs except PD2 = INT0 */
 	DDRD = ~(1 << 2);
+#endif
 
 	/* output SE0 for USB reset */
 	DDRB = ~0;
@@ -318,13 +348,17 @@ int main(void) {
 		/* delay >10ms for USB reset */
 		while (--i)
 			;
+
+		wdt_reset();
 	}
 	/* all USB and ISP pins inputs */
 	DDRB = 0;
 
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 	/* all inputs except PC0, PC1 */
 	DDRC = 0x03;
 	PORTC = 0xfe;
+#endif
 
 	/* init timer */
 	clockInit();
@@ -334,6 +368,7 @@ int main(void) {
 	sei();
 	for (;;) {
 		usbPoll();
+		wdt_reset();
 	}
 	return 0;
 }

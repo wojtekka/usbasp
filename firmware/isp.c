@@ -10,9 +10,13 @@
  */
 
 #include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
 #include "isp.h"
 #include "clock.h"
 #include "usbasp.h"
+
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 
 #define spiHWdisable() SPCR = 0
 
@@ -105,6 +109,95 @@ void ispDelay() {
 	}
 }
 
+#else
+
+uchar sck_delay;
+uchar sck_prescaler;
+uchar isp_hiaddr;
+
+#define spiHWdisable() do { } while (0)
+#define spiHWenable() do { } while (0)
+
+#define SCK_DELAY(freq) ((((F_CPU) / (freq) / 2) - 5) / 3)
+
+void ispSetSCKOption(uchar option) {
+
+	if (option == USBASP_ISP_SCK_AUTO)
+		option = USBASP_ISP_SCK_375;
+
+	sck_prescaler = 0;
+
+	switch (option)
+	{
+	case USBASP_ISP_SCK_1500:
+		sck_delay = SCK_DELAY(1500000);
+		break;
+
+	case USBASP_ISP_SCK_750:
+		sck_delay = SCK_DELAY(750000);
+		break;
+
+	case USBASP_ISP_SCK_375:
+	default:
+		sck_delay = SCK_DELAY(375000);
+		break;
+
+	case USBASP_ISP_SCK_187_5:
+		sck_delay = SCK_DELAY(187500);
+		break;
+
+	case USBASP_ISP_SCK_93_75:
+		sck_delay = SCK_DELAY(93750);
+		break;
+
+	case USBASP_ISP_SCK_32:
+		sck_delay = _BV(CS11);	// :2
+		break;
+
+	case USBASP_ISP_SCK_16:
+		sck_delay = _BV(CS11) | _BV(CS10);	// :4
+		break;
+
+	case USBASP_ISP_SCK_8:
+		sck_delay = _BV(CS12);	// :8
+		break;
+
+	case USBASP_ISP_SCK_4:
+		sck_delay = _BV(CS12) | _BV(CS10);	// :16
+		break;
+
+	case USBASP_ISP_SCK_2:
+		sck_delay = _BV(CS12) | _BV(CS11);	// :32
+		break;
+
+	case USBASP_ISP_SCK_1:
+		sck_delay = _BV(CS12) | _BV(CS11) | _BV(CS10);	// :64
+		break;
+
+	case USBASP_ISP_SCK_0_5:
+		sck_delay = _BV(CS13);	// :128
+		break;
+	}
+
+	if (option > USBASP_ISP_SCK_32)
+		ispTransmit = ispTransmit_sw;
+	else
+		ispTransmit = ispTransmit_hw;
+}
+
+void ispDelay(void)
+{
+	/* The delay is used only when resetting and connecting, so the
+	 * overhead is neglible. It's easier to do a constant delay than
+	 * calculate it. */
+	if (ispTransmit == ispTransmit_sw)
+		_delay_loop_1(F_CPU / 187500 / 3);
+	else
+		_delay_loop_2(F_CPU / 1000 / 4);
+}
+
+#endif
+
 void ispConnect() {
 
 	/* all ISP pins are inputs before */
@@ -139,6 +232,8 @@ void ispDisconnect() {
 	/* disable hardware SPI */
 	spiHWdisable();
 }
+
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 
 uchar ispTransmit_sw(uchar send_byte) {
 
@@ -178,6 +273,53 @@ uchar ispTransmit_hw(uchar send_byte) {
 		;
 	return SPDR;
 }
+
+#else
+
+uchar ispTransmit_sw(uchar send_byte)
+{
+        USIDR = send_byte;
+	USISR = _BV(USIOIF);
+
+	while (bit_is_clear(USISR, USIOIF))
+	{
+		USICR = _BV(USIWM0) | _BV(USICS1) | _BV(USICLK) | _BV(USITC);
+		_delay_loop_1(sck_delay);
+	}
+
+	return USIDR;
+}
+
+ISR(TIMER1_COMPA_vect) __attribute__ ((naked));
+
+ISR(TIMER1_COMPA_vect)
+{
+	USICR |= _BV(USITC);
+	__asm__ __volatile__ ("reti\n\t");
+}
+
+ISR(USI_OVF_vect)
+{
+	TIMSK &= ~_BV(OCIE1A);
+	USISR = _BV(USIOIF);
+}
+
+uchar ispTransmit_hw(uchar send_byte)
+{
+	USIDR = send_byte;
+	USISR = _BV(USIOIF);
+	USICR = _BV(USIOIE) | _BV(USIWM0) | _BV(USICS1) | _BV(USICLK);
+
+	OCR1A = ((F_CPU + 64000) / 128000);
+	TIMSK = _BV(OCIE1A);
+	TCCR1 = _BV(CTC1) | sck_delay;
+
+	loop_until_bit_is_clear(TIMSK, OCIE1A);
+
+	return USIDR;
+}
+
+#endif
 
 uchar ispEnterProgrammingMode() {
 	uchar check;

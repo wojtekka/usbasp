@@ -29,11 +29,19 @@ section at the end of this file).
 /* This is the port where the USB bus is connected. When you configure it to
  * "B", the registers PORTB, PINB and DDRB will be used.
  */
+#if !defined (__AVR_ATtiny45__) && !defined (__AVR_ATtiny85__)
 #define USB_CFG_DMINUS_BIT      0
+#else
+#define USB_CFG_DMINUS_BIT      3
+#endif
 /* This is the bit number in USB_CFG_IOPORT where the USB D- line is connected.
  * This may be any bit in the port.
  */
+#if !defined (__AVR_ATtiny45__) && !defined (__AVR_ATtiny85__)
 #define USB_CFG_DPLUS_BIT       1
+#else
+#define USB_CFG_DPLUS_BIT       4
+#endif
 /* This is the bit number in USB_CFG_IOPORT where the USB D+ line is connected.
  * This may be any bit in the port. Please note that D+ must also be connected
  * to interrupt pin INT0! [You can also use other interrupts, see section
@@ -162,7 +170,12 @@ section at the end of this file).
  * proceed, do a return after doing your things. One possible application
  * (besides debugging) is to flash a status LED on each packet.
  */
-/* #define USB_RESET_HOOK(resetStarts)     if(!resetStarts){hadUsbReset();} */
+#if defined (__AVR_ATtiny45__) || defined (__AVR_ATtiny85__)
+#ifndef __ASSEMBLER__
+extern void usbFunctionReset(void);
+#endif
+#define USB_RESET_HOOK(resetStarts)  if(!resetStarts){usbFunctionReset();}
+#endif
 /* This macro is a hook if you need to know when an USB RESET occurs. It has
  * one parameter which distinguishes between the start of RESET state and its
  * end.
@@ -203,7 +216,11 @@ section at the end of this file).
  * usbFunctionWrite(). Use the global usbCurrentDataToken and a static variable
  * for each control- and out-endpoint to check for duplicate packets.
  */
+#if !defined (__AVR_ATtiny45__) && !defined (__AVR_ATtiny85__)
 #define USB_CFG_HAVE_MEASURE_FRAME_LENGTH   0
+#else
+#define USB_CFG_HAVE_MEASURE_FRAME_LENGTH   1
+#endif
 /* define this macro to 1 if you want the function usbMeasureFrameLength()
  * compiled in. This function can be used to calibrate the AVR's RC oscillator.
  */
@@ -380,5 +397,13 @@ section at the end of this file).
 /* #define USB_INTR_PENDING        GIFR */
 /* #define USB_INTR_PENDING_BIT    INTF0 */
 /* #define USB_INTR_VECTOR         INT0_vect */
+
+#if defined (__AVR_ATtiny45__) || defined (__AVR_ATtiny85__)
+#define USB_INTR_CFG            PCMSK
+#define USB_INTR_CFG_SET        (1<<USB_CFG_DPLUS_BIT)
+#define USB_INTR_ENABLE_BIT     PCIE
+#define USB_INTR_PENDING_BIT    PCIF
+#define USB_INTR_VECTOR         PCINT0_vect
+#endif
 
 #endif /* __usbconfig_h_included__ */

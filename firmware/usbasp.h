@@ -62,9 +62,16 @@
 #define USBASP_ISP_SCK_1500   12  /* 1.5 MHz   */
 
 /* macros for gpio functions */
+#if !defined(__AVR_ATtiny45__) && !defined(__AVR_ATtiny85__)
 #define ledRedOn()    PORTC &= ~(1 << PC1)
 #define ledRedOff()   PORTC |= (1 << PC1)
 #define ledGreenOn()  PORTC &= ~(1 << PC0)
 #define ledGreenOff() PORTC |= (1 << PC0)
+#else
+#define ledRedOn()    do { } while (0)
+#define ledRedOff()   do { } while (0)
+#define ledGreenOn()  do { } while (0)
+#define ledGreenOff() do { } while (0)
+#endif
 
 #endif /* USBASP_H_ */
